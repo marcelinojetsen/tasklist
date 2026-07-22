@@ -1,0 +1,6 @@
+# Supabase project config. Used by the Supabase CLI and the GitHub integration.
+project_id = "ffpddwwdvrjscbxizhfh"
+
+[db]
+# Postgres major version used by your Supabase project.
+major_version = 15
