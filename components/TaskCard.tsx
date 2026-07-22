@@ -3,7 +3,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Task, TeamMember } from "@/lib/types";
-import { formatDate, initials, isOverdue } from "@/lib/util";
+import { formatDate, getPriority, initials, isOverdue, labelColor } from "@/lib/util";
 
 export default function TaskCard({
   task,
@@ -26,6 +26,7 @@ export default function TaskCard({
   };
 
   const overdue = isOverdue(task.due_date, task.done);
+  const priority = getPriority(task.priority);
 
   return (
     <div
@@ -36,6 +37,23 @@ export default function TaskCard({
       onClick={() => onOpen(task)}
       className="group cursor-grab rounded-lg border border-gray-200 bg-white p-3 shadow-sm hover:border-indigo-300 hover:shadow active:cursor-grabbing"
     >
+      {task.labels && task.labels.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1">
+          {task.labels.map((l) => {
+            const c = labelColor(l);
+            return (
+              <span
+                key={l}
+                className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                style={{ color: c.color, backgroundColor: c.bg }}
+              >
+                {l}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       <div className="flex items-start gap-2">
         <button
           onClick={(e) => {
@@ -64,9 +82,21 @@ export default function TaskCard({
         </p>
       </div>
 
-      {(task.due_date || task.start_date || assignee) && (
+      {(task.due_date || task.start_date || assignee || priority) && (
         <div className="mt-2.5 flex items-center justify-between pl-6">
           <div className="flex items-center gap-1.5">
+            {priority && (
+              <span
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold"
+                style={{ color: priority.color, backgroundColor: priority.bg }}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ backgroundColor: priority.dot }}
+                />
+                {priority.label}
+              </span>
+            )}
             {task.due_date && (
               <span
                 className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${

@@ -1,31 +1,48 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Column, Task, TeamMember } from "@/lib/types";
-import { initials } from "@/lib/util";
+import type { Column, Project, Task, TeamMember } from "@/lib/types";
+import { initials, labelColor, PRIORITIES } from "@/lib/util";
 
 export default function TaskModal({
   task,
   columns,
   team,
+  projects,
   onClose,
   onSave,
   onDelete,
+  allLabels,
 }: {
   task: Task;
   columns: Column[];
   team: TeamMember[];
+  projects: Project[];
   onClose: () => void;
   onSave: (id: string, patch: Partial<Task>) => void;
   onDelete: (id: string) => void;
+  allLabels: string[];
 }) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
   const [columnId, setColumnId] = useState(task.column_id ?? "");
+  const [projectId, setProjectId] = useState(task.project_id ?? "");
   const [assigneeId, setAssigneeId] = useState(task.assignee_id ?? "");
   const [startDate, setStartDate] = useState(task.start_date ?? "");
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
   const [done, setDone] = useState(task.done);
+  const [priority, setPriority] = useState(task.priority ?? "");
+  const [labels, setLabels] = useState<string[]>(task.labels ?? []);
+  const [labelInput, setLabelInput] = useState("");
+
+  function addLabel(raw: string) {
+    const l = raw.trim();
+    if (l && !labels.includes(l)) setLabels([...labels, l]);
+    setLabelInput("");
+  }
+  function removeLabel(l: string) {
+    setLabels(labels.filter((x) => x !== l));
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -40,13 +57,20 @@ export default function TaskModal({
       title: title.trim() || "Untitled",
       description: description.trim() || null,
       column_id: columnId || null,
+      project_id: projectId || null,
       assignee_id: assigneeId || null,
       start_date: startDate || null,
       due_date: dueDate || null,
       done,
+      priority: priority || null,
+      labels,
     });
     onClose();
   }
+
+  const labelSuggestions = allLabels.filter(
+    (l) => !labels.includes(l) && l.toLowerCase().includes(labelInput.toLowerCase())
+  );
 
   return (
     <div
@@ -90,6 +114,21 @@ export default function TaskModal({
           />
 
           <div className="grid grid-cols-2 gap-4">
+            <Field label="Project">
+              <select
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+              >
+                <option value="">No project</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
             <Field label="Column">
               <select
                 value={columnId}
@@ -114,6 +153,21 @@ export default function TaskModal({
                 {team.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Priority">
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+              >
+                <option value="">None</option>
+                {PRIORITIES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
                   </option>
                 ))}
               </select>
@@ -157,6 +211,63 @@ export default function TaskModal({
               })()}
             </div>
           )}
+
+          <Field label="Labels">
+            <div className="rounded-lg border border-gray-200 px-2 py-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {labels.map((l) => {
+                  const c = labelColor(l);
+                  return (
+                    <span
+                      key={l}
+                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold"
+                      style={{ color: c.color, backgroundColor: c.bg }}
+                    >
+                      {l}
+                      <button
+                        onClick={() => removeLabel(l)}
+                        className="opacity-60 hover:opacity-100"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+                <input
+                  value={labelInput}
+                  onChange={(e) => setLabelInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      e.preventDefault();
+                      addLabel(labelInput);
+                    }
+                    if (e.key === "Backspace" && !labelInput && labels.length) {
+                      removeLabel(labels[labels.length - 1]);
+                    }
+                  }}
+                  placeholder={labels.length ? "" : "Add label, press Enter"}
+                  className="min-w-[120px] flex-1 text-sm outline-none"
+                />
+              </div>
+              {labelInput && labelSuggestions.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1 border-t border-gray-100 pt-2">
+                  {labelSuggestions.slice(0, 8).map((l) => {
+                    const c = labelColor(l);
+                    return (
+                      <button
+                        key={l}
+                        onClick={() => addLabel(l)}
+                        className="rounded px-1.5 py-0.5 text-xs font-medium hover:opacity-80"
+                        style={{ color: c.color, backgroundColor: c.bg }}
+                      >
+                        + {l}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Field>
 
           <Field label="Description">
             <textarea

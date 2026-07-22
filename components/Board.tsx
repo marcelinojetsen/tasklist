@@ -13,24 +13,34 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
-import type { Column, Task, TeamMember } from "@/lib/types";
+import type { Column, Project, Task, TeamMember } from "@/lib/types";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import * as api from "@/lib/api";
 import ColumnView from "./ColumnView";
 import TaskCard from "./TaskCard";
 import TaskModal from "./TaskModal";
 import TeamModal from "./TeamModal";
+import { PRIORITIES, labelColor } from "@/lib/util";
 
 export default function Board() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProject, setActiveProject] = useState<string>(""); // "" = All
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
   const [showTeam, setShowTeam] = useState(false);
+
+  // filters
+  const [search, setSearch] = useState("");
+  const [fLabels, setFLabels] = useState<string[]>([]);
+  const [fAssignee, setFAssignee] = useState("");
+  const [fPriority, setFPriority] = useState("");
+  const [hideDone, setHideDone] = useState(false);
 
   // keep a synchronous reference to tasks for drag handlers
   const tasksRef = useRef<Task[]>([]);
@@ -39,6 +49,39 @@ export default function Board() {
   }, [tasks]);
 
   const teamById = useMemo(() => new Map(team.map((m) => [m.id, m])), [team]);
+
+  const allLabels = useMemo(() => {
+    const s = new Set<string>();
+    tasks.forEach((t) => t.labels?.forEach((l) => s.add(l)));
+    return Array.from(s).sort();
+  }, [tasks]);
+
+  const filtersActive =
+    search.trim() !== "" ||
+    fLabels.length > 0 ||
+    fAssignee !== "" ||
+    fPriority !== "" ||
+    hideDone;
+
+  const matchesFilters = useCallback(
+    (t: Task) => {
+      if (activeProject && t.project_id !== activeProject) return false;
+      if (hideDone && t.done) return false;
+      if (fPriority && t.priority !== fPriority) return false;
+      if (fAssignee === "none" && t.assignee_id) return false;
+      if (fAssignee && fAssignee !== "none" && t.assignee_id !== fAssignee)
+        return false;
+      if (fLabels.length && !fLabels.every((l) => t.labels?.includes(l)))
+        return false;
+      const q = search.trim().toLowerCase();
+      if (q) {
+        const hay = (t.title + " " + (t.description ?? "")).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    },
+    [activeProject, hideDone, fPriority, fAssignee, fLabels, search]
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -55,14 +98,16 @@ export default function Board() {
         return;
       }
       try {
-        const [cols, tsk, tm] = await Promise.all([
+        const [cols, tsk, tm, prj] = await Promise.all([
           api.fetchColumns(),
           api.fetchTasks(),
           api.fetchTeam(),
+          api.fetchProjects(),
         ]);
         setColumns(cols);
         setTasks(tsk);
         setTeam(tm);
+        setProjects(prj);
       } catch (e: any) {
         setError(e?.message ?? "Failed to load data");
       } finally {
@@ -74,9 +119,9 @@ export default function Board() {
   const tasksInColumn = useCallback(
     (colId: string) =>
       tasks
-        .filter((t) => t.column_id === colId)
+        .filter((t) => t.column_id === colId && matchesFilters(t))
         .sort((a, b) => a.position - b.position),
-    [tasks]
+    [tasks, matchesFilters]
   );
 
   function findContainer(id: string): string | null {
@@ -175,7 +220,12 @@ export default function Board() {
     const inCol = tasksInColumn(columnId);
     const position = (inCol.length + 1) * 1000;
     try {
-      const created = await api.createTask({ title, column_id: columnId, position });
+      const created = await api.createTask({
+        title,
+        column_id: columnId,
+        position,
+        project_id: activeProject || null,
+      });
       setTasks((p) => [...p, created]);
     } catch (e: any) {
       alert("Could not add task: " + e.message);
@@ -236,6 +286,19 @@ export default function Board() {
     setColumns((p) => p.filter((c) => c.id !== id));
     setTasks((p) => p.filter((t) => t.column_id !== id));
     await api.deleteColumn(id).catch(console.error);
+  }
+
+  async function addProject() {
+    const name = prompt("Project name?");
+    if (!name?.trim()) return;
+    const position = (projects.length + 1) * 1000;
+    try {
+      const p = await api.createProject(name.trim(), position);
+      setProjects((prev) => [...prev, p]);
+      setActiveProject(p.id);
+    } catch (e: any) {
+      alert("Could not add project: " + e.message);
+    }
   }
 
   // ---------- team ops ----------
@@ -328,6 +391,138 @@ export default function Board() {
         </div>
       </header>
 
+      {/* project tabs */}
+      <div className="flex items-center gap-1 border-b border-gray-200 bg-white px-6 pt-1">
+        <ProjectTab
+          label="All"
+          count={tasks.length}
+          active={activeProject === ""}
+          onClick={() => setActiveProject("")}
+        />
+        {projects.map((p) => (
+          <ProjectTab
+            key={p.id}
+            label={p.name}
+            count={tasks.filter((t) => t.project_id === p.id).length}
+            active={activeProject === p.id}
+            onClick={() => setActiveProject(p.id)}
+          />
+        ))}
+        <button
+          onClick={addProject}
+          className="ml-1 rounded px-2 py-1.5 text-sm text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          title="Add project"
+        >
+          + Project
+        </button>
+      </div>
+
+      {/* filter bar */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-6 py-2.5">
+        <div className="relative">
+          <svg
+            viewBox="0 0 24 24"
+            className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4-4" strokeLinecap="round" />
+          </svg>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search tasks…"
+            className="w-56 rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-sm outline-none focus:border-indigo-400"
+          />
+        </div>
+
+        <select
+          value={fPriority}
+          onChange={(e) => setFPriority(e.target.value)}
+          className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-gray-600 outline-none focus:border-indigo-400"
+        >
+          <option value="">All priorities</option>
+          {PRIORITIES.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={fAssignee}
+          onChange={(e) => setFAssignee(e.target.value)}
+          className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-gray-600 outline-none focus:border-indigo-400"
+        >
+          <option value="">All assignees</option>
+          <option value="none">Unassigned</option>
+          {team.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+
+        {allLabels.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1">
+            {allLabels.map((l) => {
+              const active = fLabels.includes(l);
+              const c = labelColor(l);
+              return (
+                <button
+                  key={l}
+                  onClick={() =>
+                    setFLabels((prev) =>
+                      prev.includes(l)
+                        ? prev.filter((x) => x !== l)
+                        : [...prev, l]
+                    )
+                  }
+                  className={`rounded px-1.5 py-0.5 text-xs font-semibold transition ${
+                    active ? "ring-2 ring-offset-1" : "opacity-60 hover:opacity-100"
+                  }`}
+                  style={{
+                    color: c.color,
+                    backgroundColor: c.bg,
+                    // @ts-expect-error css var for ring color
+                    "--tw-ring-color": c.color,
+                  }}
+                >
+                  {l}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-sm text-gray-600">
+          <input
+            type="checkbox"
+            checked={hideDone}
+            onChange={(e) => setHideDone(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+          Hide completed
+        </label>
+
+        {filtersActive && (
+          <button
+            onClick={() => {
+              setSearch("");
+              setFLabels([]);
+              setFAssignee("");
+              setFPriority("");
+              setHideDone(false);
+            }}
+            className="rounded-lg px-2 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       {/* board */}
       <DndContext
         sensors={sensors}
@@ -380,9 +575,11 @@ export default function Board() {
           task={openTask}
           columns={columns}
           team={team}
+          projects={projects}
           onClose={() => setOpenTask(null)}
           onSave={saveTask}
           onDelete={removeTask}
+          allLabels={allLabels}
         />
       )}
 
@@ -395,5 +592,37 @@ export default function Board() {
         />
       )}
     </div>
+  );
+}
+
+function ProjectTab({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition ${
+        active
+          ? "border-indigo-600 text-indigo-600"
+          : "border-transparent text-gray-500 hover:text-gray-800"
+      }`}
+    >
+      {label}
+      <span
+        className={`rounded-full px-1.5 text-xs ${
+          active ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-400"
+        }`}
+      >
+        {count}
+      </span>
+    </button>
   );
 }

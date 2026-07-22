@@ -1,5 +1,25 @@
 import { supabase } from "./supabase";
-import type { Column, Task, TeamMember } from "./types";
+import type { Column, Project, Task, TeamMember } from "./types";
+
+// ---------- Projects ----------
+export async function fetchProjects(): Promise<Project[]> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*")
+    .order("position", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createProject(name: string, position: number) {
+  const { data, error } = await supabase
+    .from("projects")
+    .insert({ name, position })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Project;
+}
 
 // ---------- Columns ----------
 export async function fetchColumns(): Promise<Column[]> {
