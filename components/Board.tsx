@@ -359,6 +359,7 @@ export default function Board() {
               onAddTask={addTask}
               onRename={renameColumn}
               onDelete={deleteColumn}
+              grow={onlyOngoing}
             />
           ))}
           {cols.length === 0 && (

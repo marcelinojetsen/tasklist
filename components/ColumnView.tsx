@@ -15,6 +15,7 @@ export default function ColumnView({
   onAddTask,
   onRename,
   onDelete,
+  grow = false,
 }: {
   column: Column;
   tasks: Task[];
@@ -24,6 +25,7 @@ export default function ColumnView({
   onAddTask: (columnId: string, title: string) => void;
   onRename: (columnId: string, name: string) => void;
   onDelete: (columnId: string) => void;
+  grow?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
@@ -45,7 +47,11 @@ export default function ColumnView({
   }
 
   return (
-    <div className="flex w-72 flex-shrink-0 flex-col rounded-xl bg-gray-100">
+    <div
+      className={`flex flex-col rounded-xl bg-gray-100 ${
+        grow ? "min-w-80 flex-1" : "w-72 flex-shrink-0"
+      }`}
+    >
       <div className="flex items-center justify-between px-3 py-2.5">
         {editingName ? (
           <input
