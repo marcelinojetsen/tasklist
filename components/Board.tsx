@@ -17,6 +17,7 @@ import type { Column, Project, Task, TeamMember } from "@/lib/types";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import * as api from "@/lib/api";
 import ColumnView from "./ColumnView";
+import ListView from "./ListView";
 import TaskCard from "./TaskCard";
 import TaskModal from "./TaskModal";
 import TeamModal from "./TeamModal";
@@ -28,6 +29,8 @@ export default function Board() {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<string>(""); // "" = All
+  const [view, setView] = useState<"list" | "board">("list");
+  const [listTab, setListTab] = useState<"ongoing" | "done">("ongoing");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,6 +124,11 @@ export default function Board() {
       tasks
         .filter((t) => t.column_id === colId && matchesFilters(t))
         .sort((a, b) => a.position - b.position),
+    [tasks, matchesFilters]
+  );
+
+  const filteredTasks = useMemo(
+    () => tasks.filter(matchesFilters),
     [tasks, matchesFilters]
   );
 
@@ -364,6 +372,28 @@ export default function Board() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="mr-1 flex rounded-lg border border-gray-200 p-0.5">
+            <button
+              onClick={() => setView("list")}
+              className={`rounded-md px-2.5 py-1 text-sm font-medium transition ${
+                view === "list"
+                  ? "bg-indigo-600 text-white"
+                  : "text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              List
+            </button>
+            <button
+              onClick={() => setView("board")}
+              className={`rounded-md px-2.5 py-1 text-sm font-medium transition ${
+                view === "board"
+                  ? "bg-indigo-600 text-white"
+                  : "text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              Board
+            </button>
+          </div>
           <div className="mr-2 flex -space-x-2">
             {team.slice(0, 5).map((m) => (
               <span
@@ -382,12 +412,14 @@ export default function Board() {
           >
             Team
           </button>
-          <button
-            onClick={addColumn}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
-          >
-            + Column
-          </button>
+          {view === "board" && (
+            <button
+              onClick={addColumn}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+            >
+              + Column
+            </button>
+          )}
         </div>
       </header>
 
@@ -497,33 +529,67 @@ export default function Board() {
           </div>
         )}
 
-        <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-sm text-gray-600">
-          <input
-            type="checkbox"
-            checked={hideDone}
-            onChange={(e) => setHideDone(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300"
-          />
-          Hide completed
-        </label>
+        <div className="ml-auto flex items-center gap-2">
+          {view === "board" && (
+            <label className="flex cursor-pointer items-center gap-1.5 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={hideDone}
+                onChange={(e) => setHideDone(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Hide completed
+            </label>
+          )}
 
-        {filtersActive && (
-          <button
-            onClick={() => {
-              setSearch("");
-              setFLabels([]);
-              setFAssignee("");
-              setFPriority("");
-              setHideDone(false);
-            }}
-            className="rounded-lg px-2 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50"
-          >
-            Clear
-          </button>
-        )}
+          {filtersActive && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setFLabels([]);
+                setFAssignee("");
+                setFPriority("");
+                setHideDone(false);
+              }}
+              className="rounded-lg px-2 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* list view */}
+      {view === "list" && (
+        <>
+          <div className="flex items-center gap-1 border-b border-gray-200 bg-white px-6">
+            <ListTab
+              label="Ongoing"
+              count={filteredTasks.filter((t) => !t.done).length}
+              active={listTab === "ongoing"}
+              onClick={() => setListTab("ongoing")}
+            />
+            <ListTab
+              label="Done"
+              count={filteredTasks.filter((t) => t.done).length}
+              active={listTab === "done"}
+              onClick={() => setListTab("done")}
+            />
+          </div>
+          <ListView
+            columns={columns}
+            projects={projects}
+            tasks={filteredTasks}
+            team={team}
+            tab={listTab}
+            onOpenTask={setOpenTask}
+            onToggleDone={toggleDone}
+          />
+        </>
+      )}
+
       {/* board */}
+      {view === "board" && (
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -569,6 +635,7 @@ export default function Board() {
           ) : null}
         </DragOverlay>
       </DndContext>
+      )}
 
       {openTask && (
         <TaskModal
@@ -592,6 +659,38 @@ export default function Board() {
         />
       )}
     </div>
+  );
+}
+
+function ListTab({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition ${
+        active
+          ? "border-indigo-600 text-indigo-600"
+          : "border-transparent text-gray-500 hover:text-gray-800"
+      }`}
+    >
+      {label}
+      <span
+        className={`rounded-full px-1.5 text-xs ${
+          active ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-400"
+        }`}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 
