@@ -132,6 +132,12 @@ export default function Board() {
     [tasks, matchesFilters]
   );
 
+  // Columns shown in the list-view "Ongoing" tab (everything except Done).
+  const ongoingColumns = useMemo(
+    () => columns.filter((c) => c.name.trim().toLowerCase() !== "done"),
+    [columns]
+  );
+
   function findContainer(id: string): string | null {
     if (columns.some((c) => c.id === id)) return id;
     const t = tasksRef.current.find((x) => x.id === id);
@@ -328,6 +334,60 @@ export default function Board() {
   }
 
   // ---------- render ----------
+  function renderBoard(cols: Column[], onlyOngoing = false) {
+    const tasksFor = (colId: string) => {
+      const list = tasksInColumn(colId);
+      return onlyOngoing ? list.filter((t) => !t.done) : list;
+    };
+    return (
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="board-scroll group flex flex-1 gap-4 overflow-x-auto p-6">
+          {cols.map((col) => (
+            <ColumnView
+              key={col.id}
+              column={col}
+              tasks={tasksFor(col.id)}
+              team={team}
+              onOpenTask={setOpenTask}
+              onToggleDone={toggleDone}
+              onAddTask={addTask}
+              onRename={renameColumn}
+              onDelete={deleteColumn}
+            />
+          ))}
+          {cols.length === 0 && (
+            <div className="text-sm text-gray-400">
+              No columns yet — click “+ Column” to start.
+            </div>
+          )}
+        </div>
+
+        <DragOverlay>
+          {activeTask ? (
+            <div className="rotate-3">
+              <TaskCard
+                task={activeTask}
+                assignee={
+                  activeTask.assignee_id
+                    ? teamById.get(activeTask.assignee_id)
+                    : undefined
+                }
+                onOpen={() => {}}
+                onToggleDone={() => {}}
+              />
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center text-gray-400">
@@ -576,66 +636,24 @@ export default function Board() {
               onClick={() => setListTab("done")}
             />
           </div>
-          <ListView
-            columns={columns}
-            projects={projects}
-            tasks={filteredTasks}
-            team={team}
-            tab={listTab}
-            onOpenTask={setOpenTask}
-            onToggleDone={toggleDone}
-          />
+          {listTab === "ongoing" ? (
+            renderBoard(ongoingColumns, true)
+          ) : (
+            <ListView
+              columns={columns}
+              projects={projects}
+              tasks={filteredTasks}
+              team={team}
+              tab="done"
+              onOpenTask={setOpenTask}
+              onToggleDone={toggleDone}
+            />
+          )}
         </>
       )}
 
       {/* board */}
-      {view === "board" && (
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="board-scroll group flex flex-1 gap-4 overflow-x-auto p-6">
-          {columns.map((col) => (
-            <ColumnView
-              key={col.id}
-              column={col}
-              tasks={tasksInColumn(col.id)}
-              team={team}
-              onOpenTask={setOpenTask}
-              onToggleDone={toggleDone}
-              onAddTask={addTask}
-              onRename={renameColumn}
-              onDelete={deleteColumn}
-            />
-          ))}
-          {columns.length === 0 && (
-            <div className="text-sm text-gray-400">
-              No columns yet — click “+ Column” to start.
-            </div>
-          )}
-        </div>
-
-        <DragOverlay>
-          {activeTask ? (
-            <div className="rotate-3">
-              <TaskCard
-                task={activeTask}
-                assignee={
-                  activeTask.assignee_id
-                    ? teamById.get(activeTask.assignee_id)
-                    : undefined
-                }
-                onOpen={() => {}}
-                onToggleDone={() => {}}
-              />
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-      )}
+      {view === "board" && renderBoard(columns)}
 
       {openTask && (
         <TaskModal
